@@ -1,0 +1,77 @@
+version: "3.9"
+services:
+  postgres:
+    container_name: collabra-demo-postgres
+    environment:
+      - POSTGRES_USER=mmuser
+      - POSTGRES_PASSWORD=mmuser_password
+      - POSTGRES_DB=mattermost
+      - LISTEN_ADDRESS="*"
+    image: postgres:14-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    read_only: false
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    volumes:
+      - ./volumes/db/var/lib/postgresql/data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U mmuser -d mattermost
+      interval: 10s
+      timeout: 3s
+      retries: 3
+  mattermost:
+    platform: linux/amd64
+    container_name: collabra-demo-mattermost
+    depends_on:
+      postgres:
+        condition: service_healthy
+    image: mattermost/mattermost-enterprise-edition:release-9.3
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    read_only: false
+    ports:
+      - "8065:8065"
+      - "8067:8067"
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./volumes/mattermost/config:/mattermost/config:rw
+      - ./volumes/mattermost/data:/mattermost/data:rw
+      - ./volumes/mattermost/logs:/mattermost/logs:rw
+      - ./volumes/mattermost/plugins:/mattermost/plugins:rw
+      - ./volumes/mattermost/client/plugins:/mattermost/client/plugins:rw
+      - ./volumes/mattermost/bleve-indexes:/mattermost/bleve-indexes:rw
+    environment:
+      - MM_SqlSettings_DriverName=postgres
+      - MM_SqlSettings_DataSource=postgres://mmuser:mmuser_password@collabra-demo-postgres:5432/mattermost?sslmode=disable&connect_timeout=10&binary_parameters=yes
+      - MM_SAMLSETTINGS_IDPCERTIFICATEFILE=/mattermost/config/saml-cert.crt
+      - MM_ServiceSettings_EnableLocalMode=true
+      - MM_PluginSettings_EnableUploads=true
+      - MM_FileSettings_MaxFileSize=104857600
+      - MM_ServiceSettings_LocalModeSocketLocation=/var/tmp/mattermost_local.socket
+  collabora:
+    image: collabora/code
+    container_name: collabra-demo-collabra
+    restart: unless-stopped
+    ports:
+      - 9980:9980
+    environment:
+      - VIRTUAL_PROTO=http
+      - VIRTUAL_PORT=9980
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=false --o:user_interface.mode=compact --o:net.proto=IPv4 --o:hexify_embedded_urls=true --o:logging.level=debug
+      # - username=admin
+      # - password=admin
+    cap_add:
+      - MKNOD
+    tty: true
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
